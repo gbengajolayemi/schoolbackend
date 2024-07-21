@@ -2,15 +2,15 @@ package student
 
 import (
 	"database/sql"
+	"errors"
 )
 
 type Repository interface {
-	CreateStudent(student *Student) error
+	CreateStudent(student *Student) (int, error)
+	GetStudentByID(id int) (*Student, error)
 	GetAllStudents() ([]Student, error)
-	UpdateStudent(student *Student) error
-	GetStudentByID(studentID int) (*Student, error)
-	DeleteStudent(studentID int) error
-
+	UpdateStudent(id int, student *Student) error
+	DeleteStudent(id int) error
 }
 
 type repository struct {
@@ -21,25 +21,56 @@ func NewRepository(db *sql.DB) Repository {
 	return &repository{db: db}
 }
 
-func (r *repository) CreateStudent(student *Student) error {
+func (r *repository) CreateStudent(student *Student) (int, error) {
 	query := `INSERT INTO Students (FirstName, LastName, DateOfBirth, Gender, Address, City, State, ZipCode, 
               PhoneNumber, Email, ParentName, ParentPhoneNumber, ParentEmail, ClassID, Section, EnrollmentDate, 
               EmergencyContactName, EmergencyContactPhoneNumber, Allergies, MedicalConditions, PhotoURL) 
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := r.db.Exec(query, student.FirstName, student.LastName, student.DateOfBirth, student.Gender,
+	result, err := r.db.Exec(query, student.FirstName, student.LastName, student.DateOfBirth, student.Gender,
 		student.Address, student.City, student.State, student.ZipCode, student.PhoneNumber, student.Email,
 		student.ParentName, student.ParentPhoneNumber, student.ParentEmail, student.ClassID, student.Section,
 		student.EnrollmentDate, student.EmergencyContactName, student.EmergencyContactPhoneNumber,
 		student.Allergies, student.MedicalConditions, student.PhotoURL)
 
-	return err
+	if err != nil {
+		return 0, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	return int(id), nil
+}
+
+func (r *repository) GetStudentByID(id int) (*Student, error) {
+	var student Student
+	query := `SELECT StudentID, FirstName, LastName, DateOfBirth, Gender, Address, City, State, ZipCode, 
+              PhoneNumber, Email, ParentName, ParentPhoneNumber, ParentEmail, ClassID, Section, EnrollmentDate, 
+              EmergencyContactName, EmergencyContactPhoneNumber, Allergies, MedicalConditions, PhotoURL 
+              FROM Students WHERE StudentID = ?`
+
+	err := r.db.QueryRow(query, id).Scan(&student.StudentID, &student.FirstName, &student.LastName, &student.DateOfBirth,
+		&student.Gender, &student.Address, &student.City, &student.State, &student.ZipCode, &student.PhoneNumber,
+		&student.Email, &student.ParentName, &student.ParentPhoneNumber, &student.ParentEmail, &student.ClassID,
+		&student.Section, &student.EnrollmentDate, &student.EmergencyContactName, &student.EmergencyContactPhoneNumber,
+		&student.Allergies, &student.MedicalConditions, &student.PhotoURL)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	return &student, nil
 }
 
 func (r *repository) GetAllStudents() ([]Student, error) {
 	query := `SELECT StudentID, FirstName, LastName, DateOfBirth, Gender, Address, City, State, ZipCode, 
               PhoneNumber, Email, ParentName, ParentPhoneNumber, ParentEmail, ClassID, Section, EnrollmentDate, 
-              EmergencyContactName, EmergencyContactPhoneNumber, Allergies, MedicalConditions, PhotoURL FROM Students`
+              EmergencyContactName, EmergencyContactPhoneNumber, Allergies, MedicalConditions, PhotoURL 
+              FROM Students`
 
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -50,64 +81,56 @@ func (r *repository) GetAllStudents() ([]Student, error) {
 	var students []Student
 	for rows.Next() {
 		var student Student
-		if err := rows.Scan(&student.StudentID, &student.FirstName, &student.LastName, &student.DateOfBirth, &student.Gender,
+		err := rows.Scan(&student.StudentID, &student.FirstName, &student.LastName, &student.DateOfBirth, &student.Gender,
 			&student.Address, &student.City, &student.State, &student.ZipCode, &student.PhoneNumber, &student.Email,
 			&student.ParentName, &student.ParentPhoneNumber, &student.ParentEmail, &student.ClassID, &student.Section,
-			&student.EnrollmentDate, &student.EmergencyContactName, &student.EmergencyContactPhoneNumber,
-			&student.Allergies, &student.MedicalConditions, &student.PhotoURL); err != nil {
+			&student.EnrollmentDate, &student.EmergencyContactName, &student.EmergencyContactPhoneNumber, &student.Allergies,
+			&student.MedicalConditions, &student.PhotoURL)
+
+		if err != nil {
 			return nil, err
 		}
 		students = append(students, student)
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
 	return students, nil
 }
 
-func (r *repository) UpdateStudent(student *Student) error {
-	query := `UPDATE Students SET FirstName=?, LastName=?, DateOfBirth=?, Gender=?, Address=?, City=?, State=?, 
-              ZipCode=?, PhoneNumber=?, Email=?, ParentName=?, ParentPhoneNumber=?, ParentEmail=?, ClassID=?, 
-              Section=?, EnrollmentDate=?, EmergencyContactName=?, EmergencyContactPhoneNumber=?, Allergies=?, 
-              MedicalConditions=?, PhotoURL=? WHERE StudentID=?`
+func (r *repository) UpdateStudent(studentID int, student *Student) error {
+	query := `UPDATE Students SET FirstName=?, LastName=?, DateOfBirth=?, Gender=?, Address=?, City=?, 
+              State=?, ZipCode=?, PhoneNumber=?, Email=?, ParentName=?, ParentPhoneNumber=?, ParentEmail=?, 
+              ClassID=?, Section=?, EnrollmentDate=?, EmergencyContactName=?, EmergencyContactPhoneNumber=?, 
+              Allergies=?, MedicalConditions=?, PhotoURL=? WHERE StudentID=?`
 
 	_, err := r.db.Exec(query, student.FirstName, student.LastName, student.DateOfBirth, student.Gender,
 		student.Address, student.City, student.State, student.ZipCode, student.PhoneNumber, student.Email,
 		student.ParentName, student.ParentPhoneNumber, student.ParentEmail, student.ClassID, student.Section,
 		student.EnrollmentDate, student.EmergencyContactName, student.EmergencyContactPhoneNumber,
-		student.Allergies, student.MedicalConditions, student.PhotoURL, student.StudentID)
+		student.Allergies, student.MedicalConditions, student.PhotoURL, studentID)
 
-	return err
-}
-
-func (r *repository) GetStudentByID(studentID int) (*Student, error) {
-	query := `SELECT StudentID, FirstName, LastName, DateOfBirth, Gender, Address, City, State,
-                    ZipCode, PhoneNumber, Email, ParentName, ParentPhoneNumber, ParentEmail,
-                    ClassID, Section, EnrollmentDate, EmergencyContactName, EmergencyContactPhoneNumber,
-                    Allergies, MedicalConditions, PhotoURL
-              FROM Students
-              WHERE StudentID = ?`
-
-	var student Student
-	err := r.db.QueryRow(query, studentID).Scan(
-		&student.StudentID, &student.FirstName, &student.LastName, &student.DateOfBirth, &student.Gender,
-		&student.Address, &student.City, &student.State, &student.ZipCode, &student.PhoneNumber, &student.Email,
-		&student.ParentName, &student.ParentPhoneNumber, &student.ParentEmail, &student.ClassID, &student.Section,
-		&student.EnrollmentDate, &student.EmergencyContactName, &student.EmergencyContactPhoneNumber,
-		&student.Allergies, &student.MedicalConditions, &student.PhotoURL,
-	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return &student, nil
+	return nil
 }
 
-func (r *repository) DeleteStudent(studentID int) error {
-    query := `DELETE FROM Students WHERE StudentID=?`
+func (r *repository) DeleteStudent(id int) error {
+	query := `DELETE FROM Students WHERE StudentID = ?`
 
-    _, err := r.db.Exec(query, studentID)
-    return err
+	result, err := r.db.Exec(query, id)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return errors.New("student not found")
+	}
+
+	return nil
 }
